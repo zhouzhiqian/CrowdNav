@@ -156,7 +156,7 @@ def main():
 
         # evaluate the model
         if episode % evaluation_interval == 0:
-            explorer.run_k_episodes(env.case_size['val'], 'val', episode=episode)
+            explorer.run_k_episodes(env.case_size['val'], 'val', episode=episode, print_failure=True)
 
         # sample k episodes into memory and optimize over the generated memory
         explorer.run_k_episodes(sample_episodes, 'train', update_memory=True, episode=episode)
@@ -170,7 +170,7 @@ def main():
             torch.save(model.state_dict(), rl_weight_file)
 
     # final test
-    explorer.run_k_episodes(env.case_size['test'], 'test', episode=episode)
+    explorer.run_k_episodes(env.case_size['test'], 'test', episode=episode, print_failure=True)
 
 
 if __name__ == '__main__':
