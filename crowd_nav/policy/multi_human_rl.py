@@ -32,14 +32,16 @@ class MultiHumanRL(CADRL):
             self.action_values = list()
             max_value = float('-inf')
             max_action = None
+            state_batch = None
+            rewards = []
+            if self.query_env:
+                next_human_states, reward, done, info = self.env.onestep_lookahead(None)
+            else:
+                next_human_states = [self.propagate(human_state, ActionXY(human_state.vx, human_state.vy))
+                                     for human_state in state.human_states]
             for action in self.action_space:
                 next_self_state = self.propagate(state.self_state, action)
-                if self.query_env:
-                    next_human_states, reward, done, info = self.env.onestep_lookahead(action)
-                else:
-                    next_human_states = [self.propagate(human_state, ActionXY(human_state.vx, human_state.vy))
-                                       for human_state in state.human_states]
-                    reward = self.compute_reward(next_self_state, next_human_states)
+                reward = self.compute_reward(next_self_state, next_human_states)
                 batch_next_states = torch.cat([torch.Tensor([next_self_state + next_human_state]).to(self.device)
                                               for next_human_state in next_human_states], dim=0)
                 rotated_batch_input = self.rotate(batch_next_states).unsqueeze(0)
@@ -47,13 +49,21 @@ class MultiHumanRL(CADRL):
                     if occupancy_maps is None:
                         occupancy_maps = self.build_occupancy_maps(next_human_states).unsqueeze(0)
                     rotated_batch_input = torch.cat([rotated_batch_input, occupancy_maps.to(self.device)], dim=2)
+                if state_batch is None:
+                    state_batch = rotated_batch_input
+                else:
+                    state_batch = torch.cat((state_batch, rotated_batch_input), dim=0)
+                rewards.append(reward)
                 # VALUE UPDATE
-                next_state_value = self.model(rotated_batch_input).data.item()
-                value = reward + pow(self.gamma, self.time_step * state.self_state.v_pref) * next_state_value
-                self.action_values.append(value)
-                if value > max_value:
-                    max_value = value
-                    max_action = action
+            next_state_value = self.model(state_batch).squeeze()
+            rewards = torch.Tensor(rewards)
+            value = rewards + pow(self.gamma, self.time_step * state.self_state.v_pref) * next_state_value
+            # self.action_values.append(value)
+            for i in range(value.shape[0]):
+                self.action_values.append(value[i])
+            max_action_index, max_action_value = torch.max(value, 0)
+            if max_action_value.data.item() > max_value:
+                max_action = self.action_space[int(max_action_index.data.item())]
             if max_action is None:
                 raise ValueError('Value network is not well trained. ')
 
